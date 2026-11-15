@@ -1,0 +1,892 @@
+{
+  "name": "HAE 03 - Query MCP server",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "bearerAuth",
+        "path": "hae-mcp-CHANGE-ME",
+        "instructions": "Read-only, aggregated health data (Apple Health via Health Auto Export). Dates are local calendar days in the workflow timezone (YYYY-MM-DD). Call list_metrics first for valid metric names; use get_metric_summary for trends, list_workouts then get_workout for exercise detail. Responses are capped and never contain raw payloads."
+      },
+      "id": "643de881-e42f-4033-9910-cfad8740f156",
+      "name": "HAE Health MCP Server",
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 2.1,
+      "position": [
+        128,
+        656
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "name": "HAE MCP Bearer"
+        }
+      },
+      "notes": "Create your own Bearer Auth credential and select it here. Change the path to a long random string."
+    },
+    {
+      "parameters": {
+        "description": "List the health metrics available (name, units, row count, first and last local date in the workflow timezone). Call this first to learn valid metric names. No inputs.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $workflow.id }}"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tool": "list_metrics",
+            "metric": "",
+            "start_date": "",
+            "end_date": "",
+            "granularity": "",
+            "workout_id": "",
+            "include_series": false
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tool",
+              "displayName": "tool",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "metric",
+              "displayName": "metric",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "start_date",
+              "displayName": "start_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "end_date",
+              "displayName": "end_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "granularity",
+              "displayName": "granularity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "workout_id",
+              "displayName": "workout_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "include_series",
+              "displayName": "include_series",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "9732dfdd-27c2-443f-8617-f584f8de09eb",
+      "name": "list_metrics",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        16,
+        896
+      ],
+      "notes": "Resolves to this workflow at run time ({{ $workflow.id }}). n8n stores the expression with a leading '='. Sub-workflow calls run the published version: publish before testing."
+    },
+    {
+      "parameters": {
+        "description": "Aggregated stats (count/avg/min/max/sum of qty) for one metric per day, week (Monday label) or month, on local calendar dates (workflow timezone). heart_rate adds hr_min/hr_max; sleep_analysis adds average sleep stages in hours. Max 92 days for day granularity, 366 days for week/month.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $workflow.id }}"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tool": "get_metric_summary",
+            "metric": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('metric', 'Metric name exactly as returned by list_metrics, e.g. step_count') }}",
+            "start_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('start_date', 'Start date YYYY-MM-DD, local calendar day, workflow timezone, inclusive', 'string') }}",
+            "end_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('end_date', 'End date YYYY-MM-DD, local calendar day, workflow timezone, inclusive', 'string') }}",
+            "granularity": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('granularity', 'One of day, week, month. Default day', 'string') }}",
+            "workout_id": "",
+            "include_series": false
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tool",
+              "displayName": "tool",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "metric",
+              "displayName": "metric",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "start_date",
+              "displayName": "start_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "end_date",
+              "displayName": "end_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "granularity",
+              "displayName": "granularity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "workout_id",
+              "displayName": "workout_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "include_series",
+              "displayName": "include_series",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "bca993d5-6112-4e2e-a3dd-f0527be14fff",
+      "name": "get_metric_summary",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        144,
+        896
+      ],
+      "notes": "Resolves to this workflow at run time ({{ $workflow.id }}). n8n stores the expression with a leading '='. Sub-workflow calls run the published version: publish before testing."
+    },
+    {
+      "parameters": {
+        "description": "List workouts between two local calendar dates (inclusive, max 366 days), newest first, summary columns only, at most 50.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $workflow.id }}"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tool": "list_workouts",
+            "metric": "",
+            "start_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('start_date', 'Start date YYYY-MM-DD, local calendar day, workflow timezone, inclusive', 'string') }}",
+            "end_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('end_date', 'End date YYYY-MM-DD, local calendar day, workflow timezone, inclusive', 'string') }}",
+            "granularity": "",
+            "workout_id": "",
+            "include_series": false
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tool",
+              "displayName": "tool",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "metric",
+              "displayName": "metric",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "start_date",
+              "displayName": "start_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "end_date",
+              "displayName": "end_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "granularity",
+              "displayName": "granularity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "workout_id",
+              "displayName": "workout_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "include_series",
+              "displayName": "include_series",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "2fb45a3a-4d83-46d9-9800-ea5d4024811f",
+      "name": "list_workouts",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        272,
+        896
+      ],
+      "notes": "Resolves to this workflow at run time ({{ $workflow.id }}). n8n stores the expression with a leading '='. Sub-workflow calls run the published version: publish before testing."
+    },
+    {
+      "parameters": {
+        "description": "One workout: summary, per-km and per-mile splits, segments and heart-rate recovery. after_60s_bpm and after_120s_bpm are the first recovery sample at or after that many seconds from the first sample, or null if the series ends earlier. Set include_series=true to also get a heart-rate series downsampled to at most 200 points. This is not an aggregate-only response.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $workflow.id }}"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tool": "get_workout",
+            "metric": "",
+            "start_date": "",
+            "end_date": "",
+            "granularity": "",
+            "workout_id": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('workout_id', 'workout_id from list_workouts') }}",
+            "include_series": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('include_series', 'true to also return the downsampled heart-rate series. Default false', 'boolean') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tool",
+              "displayName": "tool",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "metric",
+              "displayName": "metric",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "start_date",
+              "displayName": "start_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "end_date",
+              "displayName": "end_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "granularity",
+              "displayName": "granularity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "workout_id",
+              "displayName": "workout_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "include_series",
+              "displayName": "include_series",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "a9cf24ac-d33a-47dc-9eaa-a18ff20af56a",
+      "name": "get_workout",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        400,
+        896
+      ],
+      "notes": "Resolves to this workflow at run time ({{ $workflow.id }}). n8n stores the expression with a leading '='. Sub-workflow calls run the published version: publish before testing."
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tool"
+            },
+            {
+              "name": "metric"
+            },
+            {
+              "name": "start_date"
+            },
+            {
+              "name": "end_date"
+            },
+            {
+              "name": "granularity"
+            },
+            {
+              "name": "workout_id"
+            },
+            {
+              "name": "include_series",
+              "type": "boolean"
+            }
+          ]
+        }
+      },
+      "id": "b9096e14-8eae-46fe-aa0a-44e0ffec4c3e",
+      "name": "Tool Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "list_metrics"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "get_metric_summary"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "list_workouts"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "get_workout"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "93d89a1d-953d-4d7f-aefd-b5a332b64fe1",
+      "name": "Route by tool",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        288,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HEALTH_POINTS_TABLE_ID__",
+          "cachedResultName": "health_points"
+        },
+        "returnAll": true
+      },
+      "id": "4ade70d6-0de2-402f-b8f1-961a26e31101",
+      "name": "Read all health_points",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        -352
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ZONE = $now.zoneName; // workflow timezone (Settings > Timezone)\nconst args = $('Tool Input').first().json || {};\nfunction r2(x) { return x === null || x === undefined || !Number.isFinite(Number(x)) ? null : Math.round(Number(x) * 100) / 100; }\nfunction zoneNote(obj) { if (ZONE === 'UTC') obj.timezone_warning = \"Workflow timezone is UTC. Confirm Settings > Timezone; some imports drop it. Changing the zone later does not rewrite date_local.\"; return obj; }\nfunction fail(code, message, extra) { return [{ json: zoneNote(Object.assign({ ok: false, error: code, message }, extra || {})) }]; }\nfunction parseDay(s) {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return null;\n  const d = DateTime.fromISO(s, { zone: ZONE });\n  return d.isValid && d.toFormat('yyyy-MM-dd') === s ? d : null;\n}\nfunction rangeCheck(maxDays) {\n  const s = parseDay(args.start_date), e = parseDay(args.end_date);\n  if (!s || !e) return { err: fail('invalid_date', 'start_date and end_date are required, format YYYY-MM-DD (local calendar dates, workflow timezone).', { got: { start_date: args.start_date ?? null, end_date: args.end_date ?? null } }) };\n  if (e < s) return { err: fail('invalid_range', 'end_date must be on or after start_date.') };\n  const days = Math.round(e.diff(s, 'days').days) + 1;\n  if (days > maxDays) return { err: fail('range_too_large', 'Date range is ' + days + ' days; the maximum here is ' + maxDays + ' days.') };\n  return { s, e, days };\n}\nconst rows = $input.all().map(i => i.json).filter(r => r && r.metric);\nconst by = {};\nfor (const r of rows) {\n  const m = by[r.metric] || (by[r.metric] = { metric: r.metric, units: r.units || '', rows: 0, first_date: r.date_local, last_date: r.date_local, sources: {} });\n  m.rows += 1;\n  if (r.date_local < m.first_date) m.first_date = r.date_local;\n  if (r.date_local > m.last_date) m.last_date = r.date_local;\n  if (r.units && !m.units) m.units = r.units;\n  if (r.source) m.sources[r.source] = true;\n}\nconst metrics = Object.values(by).sort((a, b) => a.metric.localeCompare(b.metric)).map(m => ({\n  metric: m.metric, units: m.units, rows: m.rows, first_date: m.first_date, last_date: m.last_date, sources: Object.keys(m.sources).length,\n}));\nreturn [{ json: zoneNote({ ok: true, timezone: ZONE, metric_count: metrics.length, total_rows: rows.length, metrics,\n  note: 'Use get_metric_summary(metric, start_date, end_date, granularity) for values. Dates are local calendar days in the workflow timezone.' }) }];\n"
+      },
+      "id": "33c8b8f9-77c6-44ea-acff-10422b38d79c",
+      "name": "Aggregate list_metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        -352
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HEALTH_POINTS_TABLE_ID__",
+          "cachedResultName": "health_points"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "metric",
+              "keyValue": "={{ $(\"Tool Input\").first().json.metric ?? \"\" }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "80b08fd8-9fc0-487f-8743-6f9a9212a176",
+      "name": "Read one metric",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        -160
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ZONE = $now.zoneName; // workflow timezone (Settings > Timezone)\nconst args = $('Tool Input').first().json || {};\nfunction r2(x) { return x === null || x === undefined || !Number.isFinite(Number(x)) ? null : Math.round(Number(x) * 100) / 100; }\n// minOf/maxOf loop over the array. Spreading a large array into Math.min/Math.max can throw RangeError.\n// Same result as Math.min/Math.max, including NaN when any value is not a number.\nfunction minOf(v) { let m = Infinity; for (const x of v) { const n = Number(x); if (n !== n) return NaN; if (n < m) m = n; } return m; }\nfunction maxOf(v) { let m = -Infinity; for (const x of v) { const n = Number(x); if (n !== n) return NaN; if (n > m) m = n; } return m; }\nfunction zoneNote(obj) { if (ZONE === 'UTC') obj.timezone_warning = \"Workflow timezone is UTC. Confirm Settings > Timezone; some imports drop it. Changing the zone later does not rewrite date_local.\"; return obj; }\nfunction fail(code, message, extra) { return [{ json: zoneNote(Object.assign({ ok: false, error: code, message }, extra || {})) }]; }\nfunction parseDay(s) {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return null;\n  const d = DateTime.fromISO(s, { zone: ZONE });\n  return d.isValid && d.toFormat('yyyy-MM-dd') === s ? d : null;\n}\nfunction rangeCheck(maxDays) {\n  const s = parseDay(args.start_date), e = parseDay(args.end_date);\n  if (!s || !e) return { err: fail('invalid_date', 'start_date and end_date are required, format YYYY-MM-DD (local calendar dates, workflow timezone).', { got: { start_date: args.start_date ?? null, end_date: args.end_date ?? null } }) };\n  if (e < s) return { err: fail('invalid_range', 'end_date must be on or after start_date.') };\n  const days = Math.round(e.diff(s, 'days').days) + 1;\n  if (days > maxDays) return { err: fail('range_too_large', 'Date range is ' + days + ' days; the maximum here is ' + maxDays + ' days.') };\n  return { s, e, days };\n}\nconst metric = typeof args.metric === 'string' ? args.metric.trim() : '';\nif (!/^[A-Za-z0-9_]{1,64}$/.test(metric)) return fail('invalid_metric', 'metric is required (letters, digits, underscore). Call list_metrics to see valid names.');\nconst gran = String(args.granularity || 'day').trim().toLowerCase();\nif (!['day', 'week', 'month'].includes(gran)) return fail('invalid_granularity', 'granularity must be day, week or month.');\nconst rc = rangeCheck(gran === 'day' ? 92 : 366);\nif (rc.err) return rc.err;\nconst rows = $input.all().map(i => i.json).filter(r => r && r.metric === metric);\nif (!rows.length) return fail('unknown_metric', 'No data for metric \"' + metric + '\". Call list_metrics to see valid names.');\nconst startS = rc.s.toFormat('yyyy-MM-dd'), endS = rc.e.toFormat('yyyy-MM-dd');\nconst inRange = rows.filter(r => r.date_local >= startS && r.date_local <= endS);\nconst isHR = metric === 'heart_rate';\nconst isSleep = metric === 'sleep_analysis';\nconst stageKeys = ['totalSleep', 'asleep', 'core', 'deep', 'rem', 'awake', 'inBed'];\nfunction bucketOf(d) {\n  const dt = DateTime.fromISO(d, { zone: ZONE });\n  if (gran === 'week') return dt.startOf('week').toFormat('yyyy-MM-dd');\n  if (gran === 'month') return dt.toFormat('yyyy-MM');\n  return d;\n}\nconst buckets = {};\nfor (const r of inRange) {\n  const k = bucketOf(r.date_local);\n  const b = buckets[k] || (buckets[k] = { vals: [], hrMin: [], hrMax: [], stages: {}, days: {} });\n  b.days[r.date_local] = true;\n  const q = Number(r.qty);\n  if (r.qty !== null && r.qty !== '' && Number.isFinite(q)) b.vals.push(q);\n  let ex = null;\n  if (r.extra) { try { ex = JSON.parse(r.extra); } catch (e) { ex = null; } }\n  if (ex && isHR) {\n    if (Number.isFinite(Number(ex.Min))) b.hrMin.push(Number(ex.Min));\n    if (Number.isFinite(Number(ex.Max))) b.hrMax.push(Number(ex.Max));\n  }\n  if (ex && isSleep) {\n    for (const s of stageKeys) if (Number.isFinite(Number(ex[s]))) (b.stages[s] = b.stages[s] || []).push(Number(ex[s]));\n  }\n}\nfunction stats(v) {\n  if (!v.length) return { count: 0, avg: null, min: null, max: null, sum: null };\n  const sum = v.reduce((a, x) => a + x, 0);\n  return { count: v.length, avg: r2(sum / v.length), min: r2(minOf(v)), max: r2(maxOf(v)), sum: r2(sum) };\n}\nconst out = Object.keys(buckets).sort().map(k => {\n  const b = buckets[k];\n  const o = Object.assign({ period: k, days_with_data: Object.keys(b.days).length }, stats(b.vals));\n  if (isHR) { o.hr_min = b.hrMin.length ? minOf(b.hrMin) : null; o.hr_max = b.hrMax.length ? maxOf(b.hrMax) : null; }\n  if (isSleep) { o.stages_avg_hr = {}; for (const s of stageKeys) if (b.stages[s]) o.stages_avg_hr[s] = r2(b.stages[s].reduce((a, x) => a + x, 0) / b.stages[s].length); }\n  return o;\n});\nconst all = [].concat(...Object.values(buckets).map(b => b.vals));\nconst overall = stats(all);\nif (isHR) { const mins = [].concat(...Object.values(buckets).map(b => b.hrMin)), maxs = [].concat(...Object.values(buckets).map(b => b.hrMax)); overall.hr_min = mins.length ? minOf(mins) : null; overall.hr_max = maxs.length ? maxOf(maxs) : null; }\nreturn [{ json: zoneNote({\n  ok: true, metric, units: rows[0].units || '', granularity: gran, start_date: startS, end_date: endS, timezone: ZONE,\n  qty_meaning: isHR ? 'daily average bpm (hr_min/hr_max from per-day Min/Max)' : (isSleep ? 'totalSleep hours per night' : 'value per row as exported by Health Auto Export'),\n  bucket_count: out.length, overall, buckets: out,\n  note: inRange.length ? (gran === 'week' ? 'Week periods are labelled by their Monday.' : undefined) : 'Metric exists but has no rows in this range (data available ' + rows.map(r => r.date_local).sort()[0] + ' to ' + rows.map(r => r.date_local).sort().slice(-1)[0] + ').',\n}) }];\n"
+      },
+      "id": "d043cf90-bdfc-4745-88a0-ec7fd702bd8a",
+      "name": "Aggregate get_metric_summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HEALTH_WORKOUTS_TABLE_ID__",
+          "cachedResultName": "health_workouts"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "date_local",
+              "condition": "gte",
+              "keyValue": "={{ $(\"Tool Input\").first().json.start_date ?? \"\" }}"
+            },
+            {
+              "keyName": "date_local",
+              "condition": "lte",
+              "keyValue": "={{ $(\"Tool Input\").first().json.end_date ?? \"\" }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "2e59b59e-10bf-4990-a3b4-899a89b8504e",
+      "name": "Read workouts in range",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        32
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ZONE = $now.zoneName; // workflow timezone (Settings > Timezone)\nconst args = $('Tool Input').first().json || {};\nfunction r2(x) { return x === null || x === undefined || !Number.isFinite(Number(x)) ? null : Math.round(Number(x) * 100) / 100; }\nfunction zoneNote(obj) { if (ZONE === 'UTC') obj.timezone_warning = \"Workflow timezone is UTC. Confirm Settings > Timezone; some imports drop it. Changing the zone later does not rewrite date_local.\"; return obj; }\nfunction fail(code, message, extra) { return [{ json: zoneNote(Object.assign({ ok: false, error: code, message }, extra || {})) }]; }\nfunction parseDay(s) {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return null;\n  const d = DateTime.fromISO(s, { zone: ZONE });\n  return d.isValid && d.toFormat('yyyy-MM-dd') === s ? d : null;\n}\nfunction rangeCheck(maxDays) {\n  const s = parseDay(args.start_date), e = parseDay(args.end_date);\n  if (!s || !e) return { err: fail('invalid_date', 'start_date and end_date are required, format YYYY-MM-DD (local calendar dates, workflow timezone).', { got: { start_date: args.start_date ?? null, end_date: args.end_date ?? null } }) };\n  if (e < s) return { err: fail('invalid_range', 'end_date must be on or after start_date.') };\n  const days = Math.round(e.diff(s, 'days').days) + 1;\n  if (days > maxDays) return { err: fail('range_too_large', 'Date range is ' + days + ' days; the maximum here is ' + maxDays + ' days.') };\n  return { s, e, days };\n}\nconst rc = rangeCheck(366);\nif (rc.err) return rc.err;\nconst startS = rc.s.toFormat('yyyy-MM-dd'), endS = rc.e.toFormat('yyyy-MM-dd');\nconst rows = $input.all().map(i => i.json).filter(r => r && r.workout_id && r.date_local >= startS && r.date_local <= endS);\nrows.sort((a, b) => String(b.start_at).localeCompare(String(a.start_at)));\nconst CAP = 50;\nconst workouts = rows.slice(0, CAP).map(r => ({\n  workout_id: r.workout_id, name: r.name, date_local: r.date_local, start_local: r.start_local,\n  duration_min: r.duration_min, distance_km: r.distance_km, active_energy_kcal: r.active_energy_kcal, total_energy_kcal: r.total_energy_kcal,\n  avg_hr: r.avg_hr, max_hr: r.max_hr, min_hr: r.min_hr, location: r.location, source: r.source,\n}));\nreturn [{ json: zoneNote({ ok: true, start_date: startS, end_date: endS, timezone: ZONE, total: rows.length, returned: workouts.length, truncated: rows.length > CAP, workouts,\n  note: rows.length > CAP ? 'Only the newest ' + CAP + ' workouts are returned; narrow the date range for older ones.' : 'Newest first. Use get_workout(workout_id) for splits and segments.' }) }];\n"
+      },
+      "id": "acff327a-171b-43c7-9075-de8a463ee181",
+      "name": "Aggregate list_workouts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HEALTH_WORKOUTS_TABLE_ID__",
+          "cachedResultName": "health_workouts"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "workout_id",
+              "keyValue": "={{ $(\"Tool Input\").first().json.workout_id ?? \"\" }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "b5adf19e-0fa2-4203-af51-fee841a85dd5",
+      "name": "Read one workout",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        224
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const ZONE = $now.zoneName; // workflow timezone (Settings > Timezone)\nconst args = $('Tool Input').first().json || {};\nfunction r2(x) { return x === null || x === undefined || !Number.isFinite(Number(x)) ? null : Math.round(Number(x) * 100) / 100; }\n// minOf/maxOf loop over the array. Spreading a large array into Math.min/Math.max can throw RangeError.\n// Same result as Math.min/Math.max, including NaN when any value is not a number.\nfunction minOf(v) { let m = Infinity; for (const x of v) { const n = Number(x); if (n !== n) return NaN; if (n < m) m = n; } return m; }\nfunction maxOf(v) { let m = -Infinity; for (const x of v) { const n = Number(x); if (n !== n) return NaN; if (n > m) m = n; } return m; }\nfunction zoneNote(obj) { if (ZONE === 'UTC') obj.timezone_warning = \"Workflow timezone is UTC. Confirm Settings > Timezone; some imports drop it. Changing the zone later does not rewrite date_local.\"; return obj; }\nfunction fail(code, message, extra) { return [{ json: zoneNote(Object.assign({ ok: false, error: code, message }, extra || {})) }]; }\nfunction parseDay(s) {\n  if (typeof s !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return null;\n  const d = DateTime.fromISO(s, { zone: ZONE });\n  return d.isValid && d.toFormat('yyyy-MM-dd') === s ? d : null;\n}\nfunction rangeCheck(maxDays) {\n  const s = parseDay(args.start_date), e = parseDay(args.end_date);\n  if (!s || !e) return { err: fail('invalid_date', 'start_date and end_date are required, format YYYY-MM-DD (local calendar dates, workflow timezone).', { got: { start_date: args.start_date ?? null, end_date: args.end_date ?? null } }) };\n  if (e < s) return { err: fail('invalid_range', 'end_date must be on or after start_date.') };\n  const days = Math.round(e.diff(s, 'days').days) + 1;\n  if (days > maxDays) return { err: fail('range_too_large', 'Date range is ' + days + ' days; the maximum here is ' + maxDays + ' days.') };\n  return { s, e, days };\n}\nconst id = typeof args.workout_id === 'string' ? args.workout_id.trim() : '';\nif (!/^[A-Za-z0-9-]{8,64}$/.test(id)) return fail('invalid_workout_id', 'workout_id is required (the id from list_workouts).');\nconst row = $input.all().map(i => i.json).find(r => r && r.workout_id === id);\nif (!row) return fail('unknown_workout', 'No workout with id ' + id + '. Call list_workouts to find ids.');\nconst inc = args.include_series === true || String(args.include_series).toLowerCase() === 'true';\nlet w = {};\ntry { w = JSON.parse(row.body || '{}'); } catch (e) { return fail('bad_body', 'Stored workout JSON could not be parsed.'); }\nfunction q(o) { return o && typeof o === 'object' && Number.isFinite(Number(o.qty)) ? Number(o.qty) : null; }\nfunction hm(s) { const d = DateTime.fromFormat(String(s || ''), 'yyyy-MM-dd HH:mm:ss ZZZ', { setZone: true }); return d.isValid ? d.setZone(ZONE).toFormat('HH:mm:ss') : null; }\nfunction pace(sPerKm) { if (!Number.isFinite(sPerKm) || sPerKm <= 0) return null; const m = Math.floor(sPerKm / 60), s = Math.round(sPerKm - m * 60); return m + ':' + String(s === 60 ? 59 : s).padStart(2, '0') + '/km'; }\nfunction interval(x) {\n  const m = x.metrics || {};\n  const distM = q(m.distance);\n  const dur = Number(x.activeDuration || x.elapsedDuration || 0);\n  return {\n    index: x.index, start: hm(x.start), end: hm(x.end), duration_s: r2(dur), distance_m: r2(distM),\n    pace: pace(q(m.paceKilometre) || (distM ? dur / (distM / 1000) : null)),\n    avg_hr: r2(q(m.heartRateAverage)), max_hr: q(m.heartRateMaximum), min_hr: q(m.heartRateMinimum),\n    active_kcal: r2(q(m.activeEnergy)), partial: x.isPartial === true ? true : undefined,\n  };\n}\nconst splits = (Array.isArray(w.splits) ? w.splits : []).map(s => ({\n  per: s.targetDistance ? (q(s.targetDistance) + ' ' + (s.targetDistance.units || '')) : 'unknown',\n  items: (Array.isArray(s.items) ? s.items : []).map(interval),\n}));\nconst segments = (Array.isArray(w.segments) ? w.segments : []).map(interval);\nconst hrr = Array.isArray(w.heartRateRecovery) ? w.heartRateRecovery : [];\nlet recovery = null;\nif (hrr.length) {\n  const t0 = DateTime.fromFormat(String(hrr[0].date), 'yyyy-MM-dd HH:mm:ss ZZZ', { setZone: true });\n  const at = sec => { let best = null; let bestOffset = Infinity; for (const p of hrr) { const t = DateTime.fromFormat(String(p.date), 'yyyy-MM-dd HH:mm:ss ZZZ', { setZone: true }); if (!t.isValid || !t0.isValid) continue; const offset = t.diff(t0, 'seconds').seconds; if (offset < sec) continue; if (offset < bestOffset) { bestOffset = offset; best = p; } } return best ? r2(best.Avg) : null; };\n  recovery = { start_bpm: r2(hrr[0].Avg), after_60s_bpm: at(60), after_120s_bpm: at(120), samples: hrr.length };\n}\nconst result = {\n  ok: true,\n  workout: {\n    workout_id: row.workout_id, name: row.name, date_local: row.date_local, start_local: row.start_local,\n    end_local: (() => { const d = DateTime.fromISO(String(row.end_at || '')); return d.isValid ? d.setZone(ZONE).toISO() : null; })(),\n    duration_min: row.duration_min, distance_km: row.distance_km, active_energy_kcal: row.active_energy_kcal, total_energy_kcal: row.total_energy_kcal,\n    avg_hr: row.avg_hr, max_hr: row.max_hr, min_hr: row.min_hr,\n    avg_pace: pace(row.distance_km ? (Number(row.duration_min) * 60) / Number(row.distance_km) : null),\n    step_cadence_spm: r2(q(w.stepCadence)), speed_kmh: r2(q(w.speed)), intensity_kcal_hr_kg: r2(q(w.intensity)),\n    effort_score: q(w.estimatedEffortScore), temperature_c: r2(q(w.temperature)), humidity_pct: q(w.humidity),\n    location: row.location, source: row.source,\n  },\n  splits, segments, heart_rate_recovery: recovery,\n};\nif (inc) {\n  const hr = Array.isArray(w.heartRateData) ? w.heartRateData : [];\n  const MAX = 200;\n  const per = Math.max(1, Math.ceil(hr.length / MAX));\n  const series = [];\n  for (let i = 0; i < hr.length; i += per) {\n    const chunk = hr.slice(i, i + per);\n    const avg = chunk.reduce((a, p) => a + Number(p.Avg || 0), 0) / chunk.length;\n    series.push([hm(chunk[0].date), minOf(chunk.map(p => Number(p.Min))), r2(avg), maxOf(chunk.map(p => Number(p.Max)))]);\n  }\n  result.heart_rate_series = { columns: ['time_local', 'min', 'avg', 'max'], points: series.length, source_points: hr.length, samples_per_point: per };\n  result.heart_rate_series.data = series;\n}\nreturn [{ json: zoneNote(result) }];\n"
+      },
+      "id": "7a21b7d8-e899-49e2-bb98-c3359fe0fb18",
+      "name": "Aggregate get_workout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## HAE Health MCP server\n\nFour read-only tools: **list_metrics**, **get_metric_summary**, **list_workouts**, **get_workout**.\n\nEach tool calls **this workflow** with `{{ $workflow.id }}`. That self-call was not verified in the 2.46.4 test runs. It needs this workflow **published** and an MCP client. Calls use the published copy.\n\n`list_metrics` and `get_metric_summary` read every matching point, then cap the answer. `get_workout` returns splits, segments, recovery and an optional heart-rate series. It is not aggregate-only. Empty `source` values are not counted.\n\n### Before you publish\n- Pick **health_points** and **health_workouts** on each Data Table node (By ID placeholders).\n- Open **HAE Health MCP Server** and select **HAE MCP Bearer**. Import can attach a different Bearer credential.\n- **Settings → Timezone** same as 01 and 02, and **Execution order v1**. Some imports drop both. A UTC zone adds `timezone_warning` on tool results.\n- Replace path `hae-mcp-CHANGE-ME`.\n- Successful, manual, and error executions are not saved. To inspect a failed tool call, temporarily turn error saving on, reproduce, then turn it off.\n\n### Constants — edit the Code node, not a variable\n- Day granularity: **92 days**. Week, month, and workouts: **366 days**.\n- `list_workouts`: **50** rows.\n- Heart-rate series: **200** points.\n- Metric name: `^[A-Za-z0-9_]{1,64}$`. Workout id: `^[A-Za-z0-9-]{8,64}$`.",
+        "height": 700,
+        "width": 620,
+        "color": 4
+      },
+      "id": "25c2bdb2-140e-498f-ab25-190be7e092c7",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        -768
+      ]
+    }
+  ],
+  "connections": {
+    "list_metrics": {
+      "ai_tool": [
+        [
+          {
+            "node": "HAE Health MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_metric_summary": {
+      "ai_tool": [
+        [
+          {
+            "node": "HAE Health MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "list_workouts": {
+      "ai_tool": [
+        [
+          {
+            "node": "HAE Health MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_workout": {
+      "ai_tool": [
+        [
+          {
+            "node": "HAE Health MCP Server",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Input": {
+      "main": [
+        [
+          {
+            "node": "Route by tool",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by tool": {
+      "main": [
+        [
+          {
+            "node": "Read all health_points",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read one metric",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read workouts in range",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read one workout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read all health_points": {
+      "main": [
+        [
+          {
+            "node": "Aggregate list_metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read one metric": {
+      "main": [
+        [
+          {
+            "node": "Aggregate get_metric_summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read workouts in range": {
+      "main": [
+        [
+          {
+            "node": "Aggregate list_workouts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read one workout": {
+      "main": [
+        [
+          {
+            "node": "Aggregate get_workout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Taipei",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveDataErrorExecution": "none"
+  },
+  "tags": []
+}

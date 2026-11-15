@@ -1,0 +1,1322 @@
+{
+  "name": "HAE 02 - Dedup (health_raw -> health_points / health_workouts)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "413f0124-910c-4763-8ea4-a019d3b4297c",
+      "name": "Every 30 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1456,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HAE_DEDUP_STATE_TABLE_ID__",
+          "cachedResultName": "hae_dedup_state"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "health_raw_watermark"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "8c9bf12e-0084-46c2-bd40-7e42b52891bc",
+      "name": "Read watermark",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        288,
+        -32
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HEALTH_RAW_TABLE_ID__",
+          "cachedResultName": "health_raw"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "received_at",
+              "condition": "gt",
+              "keyValue": "={{ $json.value ? $json.value : '1970-01-01T00:00:00.000Z' }}"
+            },
+            {
+              "keyName": "received_at",
+              "condition": "lte",
+              "keyValue": "={{ $now.minus({ minutes: 2 }).toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'\") }}"
+            }
+          ]
+        },
+        "returnAll": true,
+        "orderBy": true,
+        "orderByColumn": "received_at",
+        "orderByDirection": "ASC"
+      },
+      "id": "d8738307-4f27-4542-b901-e06bdd9932d8",
+      "name": "Read new health_raw rows",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        512,
+        -32
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Runs once for all items. Input: health_raw rows (received_at > watermark, older than 2 minutes).\n// With no new rows the read node outputs one empty item; it is ignored below.\n// Watermark comparison uses a fixed-width UTC stamp so DST offsets cannot reorder rows.\n// Output: items tagged record_type = 'point' | 'workout' | 'watermark' | 'unlock'.\n// 'unlock' is always the last item, so the lock is released after every other write.\nconst ZONE = $now.zoneName; // workflow timezone (Settings > Timezone)\nconst nowLocal = DateTime.now().setZone(ZONE).toFormat(\"yyyy-MM-dd'T'HH:mm:ss.SSSZZ\");\n\nfunction parseTs(s) {\n  if (s === undefined || s === null || s === '') return null;\n  let d = DateTime.fromFormat(String(s), 'yyyy-MM-dd HH:mm:ss ZZZ', { setZone: true });\n  if (!d.isValid) d = DateTime.fromISO(String(s), { setZone: true });\n  return d.isValid ? d : null;\n}\nfunction num(v) {\n  if (v === undefined || v === null || v === '') return null;\n  const n = Number(v);\n  return Number.isFinite(n) ? n : null;\n}\nfunction qtyOf(o) { return o && typeof o === 'object' ? num(o.qty) : num(o); }\nfunction unitsOf(o) { return o && typeof o === 'object' ? String(o.units || '') : ''; }\nfunction toKcal(o) {\n  const q = qtyOf(o); if (q === null) return null;\n  const u = unitsOf(o).toLowerCase();\n  if (u === 'kj') return Math.round((q / 4.184) * 10) / 10;\n  return Math.round(q * 10) / 10;\n}\nfunction toKm(o) {\n  const q = qtyOf(o); if (q === null) return null;\n  const u = unitsOf(o).toLowerCase();\n  const k = u === 'm' ? q / 1000 : (u === 'mi' ? q * 1.609344 : q);\n  return Math.round(k * 1000) / 1000;\n}\nfunction sourceStr(s) {\n  if (s === undefined || s === null) return '';\n  if (typeof s === 'object') return String(s.name || s.identifier || '');\n  return String(s);\n}\n\nconst readRows = $input.all().map(i => i.json).filter(r => r && typeof r === 'object' && Object.keys(r).length > 0);\n// Watermark uses every read row, including ones later skipped, so a row with no\n// payload_id or body is not selected again on the next run.\nconst UTC_STAMP = \"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'\";\nfunction utcStamp(s) {\n  const d = DateTime.fromISO(String(s || ''), { setZone: true });\n  return d.isValid ? d.toUTC().toFormat(UTC_STAMP) : '';\n}\nlet maxReceived = '';\nfor (const r of readRows) {\n  const stamp = utcStamp(r.received_at);\n  if (stamp && stamp > maxReceived) maxReceived = stamp;\n}\nconst errors = [];\nlet skipped = 0;\nconst rows = [];\nfor (const r of readRows) {\n  if (r.payload_id && r.body) rows.push(r);\n  else skipped += 1;\n}\nif (skipped) errors.push('skipped=' + skipped + ' missing payload_id or body');\nrows.sort((a, b) => {\n  const as = utcStamp(a.received_at) || String(a.received_at || '');\n  const bs = utcStamp(b.received_at) || String(b.received_at || '');\n  if (as !== bs) return as < bs ? -1 : 1;\n  return Number(a.id || 0) - Number(b.id || 0);\n});\n\nconst points = new Map();\nconst workouts = new Map();\n\nfor (const r of rows) {\n  let body;\n  try { body = JSON.parse(r.body); } catch (e) { errors.push(r.payload_id + ': bad JSON'); continue; }\n  const data = (body && body.data) || {};\n\n  for (const m of (Array.isArray(data.metrics) ? data.metrics : [])) {\n    const metric = String((m && m.name) || '');\n    if (!metric) continue;\n    for (const p of (Array.isArray(m.data) ? m.data : [])) {\n      const d = parseTs(p && p.date);\n      if (!d) { errors.push(r.payload_id + ': bad date in ' + metric); continue; }\n      const ts = d.toUTC().toISO();\n      const source = sourceStr(p.source);\n      const key = metric + '|' + ts;\n      const extra = {};\n      for (const k of Object.keys(p)) {\n        if (k !== 'date' && k !== 'qty' && k !== 'source' && k !== 'units') extra[k] = p[k];\n      }\n      let qty = num(p.qty);\n      if (qty === null && p.Avg !== undefined) qty = num(p.Avg);\n      if (qty === null && p.totalSleep !== undefined) qty = num(p.totalSleep);\n      if (qty === null && p.asleep !== undefined) qty = num(p.asleep);\n      points.set(key, {\n        record_type: 'point',\n        key, metric, ts,\n        ts_local: d.setZone(ZONE).toISO(),\n        date_local: d.setZone(ZONE).toFormat('yyyy-MM-dd'),\n        source,\n        units: String(p.units || m.units || ''),\n        qty,\n        extra: Object.keys(extra).length ? JSON.stringify(extra) : '',\n        payload_id: r.payload_id,\n        received_at: r.received_at,\n        updated_at: nowLocal,\n      });\n    }\n  }\n\n  for (const w of (Array.isArray(data.workouts) ? data.workouts : [])) {\n    const id = String((w && w.id) || '');\n    if (!id) { errors.push(r.payload_id + ': workout without id'); continue; }\n    const s = parseTs(w.start); const e = parseTs(w.end);\n    const hr = w.heartRate || {};\n    workouts.set(id, {\n      record_type: 'workout',\n      workout_id: id,\n      name: String(w.name || ''),\n      start_at: s ? s.toUTC().toISO() : '',\n      end_at: e ? e.toUTC().toISO() : '',\n      start_local: s ? s.setZone(ZONE).toISO() : '',\n      date_local: s ? s.setZone(ZONE).toFormat('yyyy-MM-dd') : '',\n      duration_min: num(w.duration) === null ? null : Math.round(num(w.duration) / 6) / 10,\n      distance_km: toKm(w.distance),\n      active_energy_kcal: toKcal(w.activeEnergyBurned),\n      total_energy_kcal: toKcal(w.totalEnergy),\n      avg_hr: qtyOf(hr.avg) !== null ? Math.round(qtyOf(hr.avg) * 10) / 10 : (qtyOf(w.avgHeartRate) !== null ? Math.round(qtyOf(w.avgHeartRate) * 10) / 10 : null),\n      max_hr: qtyOf(hr.max) !== null ? qtyOf(hr.max) : qtyOf(w.maxHeartRate),\n      min_hr: qtyOf(hr.min),\n      source: sourceStr(w.source),\n      location: String(w.location || ''),\n      payload_id: r.payload_id,\n      received_at: r.received_at,\n      body: JSON.stringify(w),\n      updated_at: nowLocal,\n    });\n  }\n}\n\nconst out = [];\nfor (const v of points.values()) out.push({ json: v });\nfor (const v of workouts.values()) out.push({ json: v });\nif (maxReceived) {\n  out.push({ json: {\n    record_type: 'watermark',\n    name: 'health_raw_watermark',\n    value: maxReceived,\n    note: 'rows=' + rows.length + ' skipped=' + skipped + ' points=' + points.size + ' workouts=' + workouts.size + (errors.length ? ' errors=' + errors.slice(0, 5).join('; ') : '') + (ZONE === 'UTC' ? ' timezone_warning=Settings > Timezone is UTC; confirm import kept it' : ''),\n    updated_at: nowLocal,\n  } });\n}\nout.push({ json: { record_type: 'unlock', name: 'health_raw_dedup_lock', updated_at: nowLocal } });\nreturn out;\n"
+      },
+      "id": "9a204859-b9cf-48ae-b609-5ab1f931a5e3",
+      "name": "Flatten metrics and workouts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.record_type }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "point"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.record_type }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "workout"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.record_type }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "watermark"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.record_type }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "unlock"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "53edddb8-1d6b-4f76-b01f-901be58ac4d5",
+      "name": "Route by record type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1200,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HEALTH_POINTS_TABLE_ID__",
+          "cachedResultName": "health_points"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "key",
+              "keyValue": "={{ $json.key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "key": "={{ $json.key }}",
+            "metric": "={{ $json.metric }}",
+            "ts": "={{ $json.ts }}",
+            "ts_local": "={{ $json.ts_local }}",
+            "date_local": "={{ $json.date_local }}",
+            "source": "={{ $json.source }}",
+            "units": "={{ $json.units }}",
+            "qty": "={{ $json.qty }}",
+            "extra": "={{ $json.extra }}",
+            "payload_id": "={{ $json.payload_id }}",
+            "received_at": "={{ $json.received_at }}",
+            "updated_at": "={{ $json.updated_at }}"
+          },
+          "schema": [
+            {
+              "id": "key",
+              "displayName": "key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "metric",
+              "displayName": "metric",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ts",
+              "displayName": "ts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ts_local",
+              "displayName": "ts_local",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_local",
+              "displayName": "date_local",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "units",
+              "displayName": "units",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "qty",
+              "displayName": "qty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "extra",
+              "displayName": "extra",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "payload_id",
+              "displayName": "payload_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1606b7d0-d65f-4de0-80b4-d7a2dd15e8fc",
+      "name": "Upsert health_points",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1460,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HEALTH_WORKOUTS_TABLE_ID__",
+          "cachedResultName": "health_workouts"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "workout_id",
+              "keyValue": "={{ $json.workout_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workout_id": "={{ $json.workout_id }}",
+            "name": "={{ $json.name }}",
+            "start_at": "={{ $json.start_at }}",
+            "end_at": "={{ $json.end_at }}",
+            "start_local": "={{ $json.start_local }}",
+            "date_local": "={{ $json.date_local }}",
+            "duration_min": "={{ $json.duration_min }}",
+            "distance_km": "={{ $json.distance_km }}",
+            "active_energy_kcal": "={{ $json.active_energy_kcal }}",
+            "total_energy_kcal": "={{ $json.total_energy_kcal }}",
+            "avg_hr": "={{ $json.avg_hr }}",
+            "max_hr": "={{ $json.max_hr }}",
+            "min_hr": "={{ $json.min_hr }}",
+            "source": "={{ $json.source }}",
+            "location": "={{ $json.location }}",
+            "payload_id": "={{ $json.payload_id }}",
+            "received_at": "={{ $json.received_at }}",
+            "body": "={{ $json.body }}",
+            "updated_at": "={{ $json.updated_at }}"
+          },
+          "schema": [
+            {
+              "id": "workout_id",
+              "displayName": "workout_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "start_at",
+              "displayName": "start_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "end_at",
+              "displayName": "end_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "start_local",
+              "displayName": "start_local",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_local",
+              "displayName": "date_local",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "duration_min",
+              "displayName": "duration_min",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "distance_km",
+              "displayName": "distance_km",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "active_energy_kcal",
+              "displayName": "active_energy_kcal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "total_energy_kcal",
+              "displayName": "total_energy_kcal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "avg_hr",
+              "displayName": "avg_hr",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "max_hr",
+              "displayName": "max_hr",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "min_hr",
+              "displayName": "min_hr",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "location",
+              "displayName": "location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "payload_id",
+              "displayName": "payload_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9049f7db-9703-49b1-b3f8-818b730175d9",
+      "name": "Upsert health_workouts",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1460,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HAE_DEDUP_STATE_TABLE_ID__",
+          "cachedResultName": "hae_dedup_state"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "health_raw_watermark"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $json.name }}",
+            "value": "={{ $json.value }}",
+            "note": "={{ $json.note }}",
+            "updated_at": "={{ $json.updated_at }}"
+          },
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "value",
+              "displayName": "value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c6553e46-22e7-4471-9a92-c2214b1057e0",
+      "name": "Save watermark if newer",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2420,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## HAE dedup\n\nEvery **30 minutes**, reads health_raw rows after the watermark and at or before **now minus 2 minutes** (UTC stamps).\n\n**Lock.** Only one run works at a time. The run reads the `health_raw_dedup_lock` row in hae_dedup_state. If another execution owns it and `lock_until` is still in the future, this run stops. Otherwise it writes its own execution id and now + **120 minutes**, waits 3 seconds, and continues only if it reads its own id back. The last item of the loop releases the lock (only if this execution still owns it). A failed run leaves the lock until `lock_until`, then the next tick takes it.\n\n**One record at a time** walks the Code node output in order: points, workouts, the watermark, then unlock. Each upsert finishes and returns to the loop before the next item. A failed upsert stops the loop, so the watermark does not move. The watermark is re-read and saved only if this run's value is later. Do not replace the loop with parallel branches.\n\nWithin one run the newest payload wins. Re-sends upsert the same `metric|ts` or `workout_id`. A run that lasts longer than 120 minutes loses the lock; raise `LOCK_MINUTES` in **Check lock is free** if backfills take that long.\n\nNo credentials and no outbound calls.\n\n### Before you publish\n- Pick each Data Table by id: `health_raw`, `hae_dedup_state` (seven nodes), `health_points`, `health_workouts`.\n- `hae_dedup_state` needs string columns `lock_owner` and `lock_until`.\n- **Settings → Timezone** same as workflows 01 and 03, and **Execution order v1**. Some imports drop both.\n- Successful, manual, and error executions are not saved. To inspect a failed upsert, temporarily turn error saving on, reproduce, then turn it off.\n\n### Constants — edit the node, not a variable\n- Schedule: **every 30 minutes**.\n- Settle delay: **2 minutes**.\n- Watermark row: **`health_raw_watermark`**.\n- Lock row: **`health_raw_dedup_lock`**, expiry **120 minutes** (`LOCK_MINUTES`).\n- Empty-watermark fallback: `1970-01-01T00:00:00.000Z`.\n\n`received_at` on the watermark and `lock_until` are UTC `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`. `updated_at` is still local.",
+        "height": 820,
+        "width": 640,
+        "color": 4
+      },
+      "id": "503f0670-afef-4c2b-bb6d-a5bb1f6115f4",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1520,
+        -900
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "04ddae79-6d3b-4be3-b355-070b2d486ba2",
+      "name": "One record at a time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        960,
+        -32
+      ],
+      "notes": "Output 0 is done, output 1 is the loop (Split in Batches v3). Batch size 1 so the watermark item cannot start until earlier upserts return."
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HAE_DEDUP_STATE_TABLE_ID__",
+          "cachedResultName": "hae_dedup_state"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "health_raw_dedup_lock"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "459e9a08-77f4-4c08-879a-d14ac9c55779",
+      "name": "Read lock",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -1232,
+        -32
+      ],
+      "alwaysOutputData": true,
+      "notes": "Lock row in hae_dedup_state. Always outputs an item so the first run (no row yet) continues."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Skip this run when another execution holds a live lock.\n// The lock row is name = 'health_raw_dedup_lock' in hae_dedup_state, with lock_owner (execution id)\n// and lock_until (fixed-width UTC stamp). A lock_until that is missing, past, or not\n// a UTC stamp counts as free, so a crashed run blocks dedup for at most LOCK_MINUTES.\n// Output: one item to take the lock, or no items (the run ends here).\nconst LOCK_MINUTES = 120;\nconst UTC_STAMP = \"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'\";\nconst STAMP_RE = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/;\nconst ZONE = $now.zoneName;\nconst me = String($execution.id);\nconst row = $input.first() ? ($input.first().json || {}) : {};\nconst now = DateTime.now().toUTC();\nconst nowStamp = now.toFormat(UTC_STAMP);\nconst owner = String(row.lock_owner || '');\nconst until = String(row.lock_until || '');\nconst live = owner !== '' && owner !== me && STAMP_RE.test(until) && until > nowStamp;\nif (live) return [];\nreturn [{ json: {\n  name: 'health_raw_dedup_lock',\n  lock_owner: me,\n  lock_until: now.plus({ minutes: LOCK_MINUTES }).toFormat(UTC_STAMP),\n  note: 'held by execution ' + me + (owner && owner !== me ? ' (previous owner ' + owner + ', lock_until ' + (until || 'empty') + ')' : ''),\n  updated_at: DateTime.now().setZone(ZONE).toFormat(\"yyyy-MM-dd'T'HH:mm:ss.SSSZZ\"),\n} }];\n"
+      },
+      "id": "23cf5d91-e4dc-4597-b786-2f463d4eb59e",
+      "name": "Check lock is free",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1008,
+        -32
+      ],
+      "notes": "Returns no items when another execution holds an unexpired lock, which ends this run."
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HAE_DEDUP_STATE_TABLE_ID__",
+          "cachedResultName": "hae_dedup_state"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "health_raw_dedup_lock"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $json.name }}",
+            "lock_owner": "={{ $json.lock_owner }}",
+            "lock_until": "={{ $json.lock_until }}",
+            "note": "={{ $json.note }}",
+            "updated_at": "={{ $json.updated_at }}"
+          },
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lock_owner",
+              "displayName": "lock_owner",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lock_until",
+              "displayName": "lock_until",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2622d41-7d8d-463f-a3da-b5a77ab561b1",
+      "name": "Take lock",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -784,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 3,
+        "unit": "seconds"
+      },
+      "id": "c3c2c182-37a3-46ac-8c5a-873d0c963740",
+      "name": "Settle 3 seconds",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -560,
+        -32
+      ],
+      "webhookId": "83f2862a-cd30-4251-98b8-3cb0f1f34ce8",
+      "notes": "Two runs that start together both write the lock. After the pause, only the last writer reads its own id back."
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HAE_DEDUP_STATE_TABLE_ID__",
+          "cachedResultName": "hae_dedup_state"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "health_raw_dedup_lock"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "d0a8ce82-7570-4fe5-962f-b9bd9e7d9ed0",
+      "name": "Confirm lock",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -336,
+        -32
+      ],
+      "notes": "Re-reads the lock row after the pause."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dcbb593d-3ca8-45db-a333-ba73cb4aa4d7",
+              "leftValue": "={{ String($json.lock_owner || '') === String($execution.id) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "12c0a680-fc09-46f7-add9-afd268dbfe2d",
+      "name": "We hold the lock",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -112,
+        -32
+      ],
+      "notes": "False output is unused: another execution took the lock, so this run stops."
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HAE_DEDUP_STATE_TABLE_ID__",
+          "cachedResultName": "hae_dedup_state"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "health_raw_watermark"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "282cb1c4-39ec-4577-bb15-d4c0f609f98d",
+      "name": "Re-read watermark",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1700,
+        160
+      ],
+      "alwaysOutputData": true,
+      "notes": "Reads the stored watermark after this run's upserts. Always outputs an item so the loop reaches the unlock item."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Only move the watermark forward. Compares this run's watermark item with the\n// value stored now (re-read after this run's upserts), both as fixed-width UTC stamps.\n// Always returns one item so the loop continues to the unlock item.\nconst UTC_STAMP = \"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'\";\nfunction utcStamp(s) {\n  const d = DateTime.fromISO(String(s || ''), { setZone: true });\n  return d.isValid ? d.toUTC().toFormat(UTC_STAMP) : '';\n}\nconst wm = $('Flatten metrics and workouts').all().map(i => i.json).find(j => j && j.record_type === 'watermark') || {};\nconst storedRaw = $input.first() ? String(($input.first().json || {}).value || '') : '';\nconst stored = utcStamp(storedRaw);\nconst next = utcStamp(wm.value);\nconst save = next !== '' && (stored === '' || next > stored);\nreturn [{ json: {\n  save,\n  name: 'health_raw_watermark',\n  value: wm.value || '',\n  stored_value: storedRaw,\n  note: wm.note || '',\n  updated_at: wm.updated_at || '',\n} }];\n"
+      },
+      "id": "66545bb8-a932-4d98-8b25-c3909894006c",
+      "name": "Compare with stored watermark",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1940,
+        160
+      ],
+      "notes": "save is true only when this run's watermark is later than the stored one."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9baba609-4843-4112-88a7-fb7b4dac2925",
+              "leftValue": "={{ $json.save === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7f02b2cb-7433-430e-a738-04d5ab72c82e",
+      "name": "Watermark is newer",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2180,
+        160
+      ],
+      "notes": "False output goes straight back to the loop, so an older run never moves the watermark backwards."
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HAE_DEDUP_STATE_TABLE_ID__",
+          "cachedResultName": "hae_dedup_state"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "health_raw_dedup_lock"
+            },
+            {
+              "keyName": "lock_owner",
+              "keyValue": "={{ String($execution.id) }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lock_owner": "",
+            "lock_until": "1970-01-01T00:00:00.000Z",
+            "note": "={{ 'released by execution ' + $execution.id }}",
+            "updated_at": "={{ $json.updated_at }}"
+          },
+          "schema": [
+            {
+              "id": "lock_owner",
+              "displayName": "lock_owner",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lock_until",
+              "displayName": "lock_until",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c18b0170-132f-4ed9-8370-1807eb5c1492",
+      "name": "Release lock",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1460,
+        400
+      ],
+      "notes": "Updates the lock row only while lock_owner is still this execution, so it cannot clear a newer run's lock."
+    }
+  ],
+  "connections": {
+    "Every 30 minutes": {
+      "main": [
+        [
+          {
+            "node": "Read lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read watermark": {
+      "main": [
+        [
+          {
+            "node": "Read new health_raw rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read new health_raw rows": {
+      "main": [
+        [
+          {
+            "node": "Flatten metrics and workouts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten metrics and workouts": {
+      "main": [
+        [
+          {
+            "node": "One record at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by record type": {
+      "main": [
+        [
+          {
+            "node": "Upsert health_points",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upsert health_workouts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Re-read watermark",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Release lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One record at a time": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Route by record type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert health_points": {
+      "main": [
+        [
+          {
+            "node": "One record at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert health_workouts": {
+      "main": [
+        [
+          {
+            "node": "One record at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read lock": {
+      "main": [
+        [
+          {
+            "node": "Check lock is free",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check lock is free": {
+      "main": [
+        [
+          {
+            "node": "Take lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Take lock": {
+      "main": [
+        [
+          {
+            "node": "Settle 3 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settle 3 seconds": {
+      "main": [
+        [
+          {
+            "node": "Confirm lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm lock": {
+      "main": [
+        [
+          {
+            "node": "We hold the lock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "We hold the lock": {
+      "main": [
+        [
+          {
+            "node": "Read watermark",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Re-read watermark": {
+      "main": [
+        [
+          {
+            "node": "Compare with stored watermark",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare with stored watermark": {
+      "main": [
+        [
+          {
+            "node": "Watermark is newer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Watermark is newer": {
+      "main": [
+        [
+          {
+            "node": "Save watermark if newer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "One record at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save watermark if newer": {
+      "main": [
+        [
+          {
+            "node": "One record at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Release lock": {
+      "main": [
+        [
+          {
+            "node": "One record at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Taipei",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveDataErrorExecution": "none"
+  },
+  "tags": []
+}

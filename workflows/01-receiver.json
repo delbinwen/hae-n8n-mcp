@@ -1,0 +1,370 @@
+{
+  "name": "HAE 01 - Receiver (Health Auto Export webhook)",
+  "nodes": [
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HEALTH_RAW_TABLE_ID__",
+          "cachedResultName": "health_raw"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "payload_id": "={{ \"hae-\" + $execution.id }}",
+            "received_at": "={{ $now.toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'\") }}",
+            "kind": "={{ [((($json.body || {}).data || {}).metrics || []).length ? \"metrics\" : \"\", ((($json.body || {}).data || {}).workouts || []).length ? \"workouts\" : \"\", ((($json.body || {}).data || {}).ecg || []).length ? \"ecg\" : \"\"].filter(k => k).join(\"+\") || \"unknown\" }}",
+            "size_chars": "={{ JSON.stringify($json.body).length }}",
+            "body": "={{ JSON.stringify($json.body) }}"
+          },
+          "schema": [
+            {
+              "id": "payload_id",
+              "displayName": "payload_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kind",
+              "displayName": "kind",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "size_chars",
+              "displayName": "size_chars",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "body",
+              "displayName": "body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "optimizeBulk": true
+        }
+      },
+      "id": "eabfb601-fedb-4039-94da-b7e94c98ead6",
+      "name": "Store in health_raw",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 3,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "id": "19f2466d-76bd-4f02-9e81-91e182d90133",
+      "name": "Daily cleanup 03:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HEALTH_RAW_TABLE_ID__",
+          "cachedResultName": "health_raw"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "received_at",
+              "condition": "lt",
+              "keyValue": "={{ $json.delete_before }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "730599f7-69b1-4d28-bbe0-178a53a6ffdc",
+      "name": "Delete rows older than 3 days",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## HAE receiver\n\nTop branch: **Has body data** requires a non-null object body whose `data` is also a non-null object. Otherwise **Reply missing body** returns 400 `{\"ok\":false,\"error\":\"missing body.data\"}` and nothing is stored. A valid body is stored in **health_raw**, then **Reply ok** returns `{\"ok\":true}`. A failed insert (missing table, full data-table cap) does not return 200, so the app can retry.\n\nBottom branch: every day at **03:30** (workflow timezone) deletes raw rows older than both **3 days** and the dedup watermark. No watermark, or a watermark that is not the UTC stamp, deletes nothing.\n\n### Before you publish\n- Open every Data Table node and pick the table. They are **By ID** placeholders (`health_raw` on the store and delete nodes, `hae_dedup_state` on the cleanup read). Import does not bind them.\n- Open **HAE Webhook** and select **HAE Webhook Header Auth**. Import can attach a different Header Auth credential of the same type.\n- **Settings → Timezone** (template default `Asia/Taipei`) and **Execution order v1**. Some import paths drop both.\n- **Settings → executions: do not save** successful, manual, or error executions. A failed insert is still a non-200 to the phone. To inspect a failure, temporarily turn error saving on, reproduce, then turn it off. See the README.\n- Replace path `hae-ingest-CHANGE-ME`.\n\n### Constants — edit the node, not a variable\n- Retention: **3 days**. Node `Retention cutoff`.\n- Cleanup clock: **03:30** workflow timezone. Node `Daily cleanup 03:30`.\n\n### received_at\nUTC `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`.",
+        "height": 640,
+        "width": 580,
+        "color": 4
+      },
+      "id": "97bc2187-8e2a-49a4-a7ba-4acdf178c0e2",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hae-ingest-CHANGE-ME",
+        "authentication": "headerAuth",
+        "options": {},
+        "responseMode": "responseNode"
+      },
+      "id": "694708e1-b087-4a2d-93e5-5957c2c5c9f1",
+      "name": "HAE Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "HAE Webhook Header Auth"
+        }
+      },
+      "notes": "Create a Header Auth credential with a unique name (HAE Webhook Header Auth) and select it here after import. n8n may auto-select another Header Auth credential. A body without an object body.data is rejected with 400 and is not stored. A valid body is stored, then the webhook replies {\"ok\":true}."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"ok\": true\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "69244a39-a0da-4ede-be80-37a1ff6093d1",
+      "name": "Reply ok",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        740,
+        -80
+      ],
+      "notes": "Runs only after the insert. The body is static so the stored health payload is not echoed to the phone."
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "__HAE_DEDUP_STATE_TABLE_ID__",
+          "cachedResultName": "hae_dedup_state"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "health_raw_watermark"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "4cb74f4c-cf7c-434e-b17b-002bed71e634",
+      "name": "Read cleanup watermark",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        320
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Delete only rows dedup has already passed, and only past the 3-day retention.\n// Cutoff is the earlier of (now minus 3 days) and a UTC watermark stamp.\n// Missing watermark, or a legacy offset stamp: delete nothing.\nconst UTC_STAMP = \"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'\";\nconst ZONE = $now.zoneName;\nconst retention = $now.minus({ days: 3 }).toUTC().toFormat(UTC_STAMP);\nconst wm = String(($json && $json.value) || '');\nconst utc = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/.test(wm);\nconst deleteBefore = (!wm || !utc) ? '1970-01-01T00:00:00.000Z' : (wm < retention ? wm : retention);\nconst out = {\n  delete_before: deleteBefore,\n  retention_cutoff: retention,\n  watermark: wm,\n  watermark_ignored: Boolean(wm) && !utc,\n};\nif (ZONE === 'UTC') out.timezone_warning = \"Workflow timezone is UTC. Confirm Settings > Timezone; some imports drop it. Changing the zone later does not rewrite date_local.\";\nreturn [{ json: out }];\n"
+      },
+      "id": "cd58de5e-9624-473d-838d-361c48487845",
+      "name": "Retention cutoff",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ba3b9420-2f3b-4507-9710-5bb59440eca3",
+              "leftValue": "={{ (() => { const body = $json.body; const plain = (v) => !!v && typeof v === 'object' && !Array.isArray(v); return plain(body) && plain(body.data); })() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2c1ab1d4-ea9a-4041-85e6-e52c08656534",
+      "name": "Has body data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        0
+      ],
+      "notes": "True only when the POST body is a non-null object and body.data is a non-null object. Arrays do not count."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"ok\": false,\n  \"error\": \"missing body.data\"\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "ffd3a597-d41f-4a13-a756-6cfada027fc5",
+      "name": "Reply missing body",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        140
+      ],
+      "notes": "No row is written. Health Auto Export should treat 400 as a failed export."
+    }
+  ],
+  "connections": {
+    "Daily cleanup 03:30": {
+      "main": [
+        [
+          {
+            "node": "Read cleanup watermark",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HAE Webhook": {
+      "main": [
+        [
+          {
+            "node": "Has body data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store in health_raw": {
+      "main": [
+        [
+          {
+            "node": "Reply ok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read cleanup watermark": {
+      "main": [
+        [
+          {
+            "node": "Retention cutoff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retention cutoff": {
+      "main": [
+        [
+          {
+            "node": "Delete rows older than 3 days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has body data": {
+      "main": [
+        [
+          {
+            "node": "Store in health_raw",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply missing body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Taipei",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveDataErrorExecution": "none"
+  },
+  "tags": []
+}
